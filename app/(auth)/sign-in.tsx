@@ -1,72 +1,333 @@
-//
-import { Link, router } from "expo-router";
-import { Text, TouchableOpacity, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSignIn } from "@clerk/expo";
+import { Link, useRouter, type Href } from "expo-router";
+import { styled } from "nativewind";
+import { useState } from "react";
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { SafeAreaView as RNSafeAreaView } from "react-native-safe-area-context";
+// import { usePostHog } from 'posthog-react-native';
+
+const SafeAreaView = styled(RNSafeAreaView);
 
 const SignIn = () => {
-  const handleGoToMain = () => {
-    // Replace the current auth stack with the main tabs (root)
-    router.replace("/");
+  const { signIn, errors, fetchStatus } = useSignIn();
+  const router = useRouter();
+  // const posthog = usePostHog();
+
+  const [emailAddress, setEmailAddress] = useState("");
+  const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+
+  // Validation states
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [passwordTouched, setPasswordTouched] = useState(false);
+
+  // Client-side validation
+  const emailValid =
+    emailAddress.length === 0 ||
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailAddress);
+  const passwordValid = password.length > 0;
+  const formValid =
+    emailAddress.length > 0 && password.length > 0 && emailValid;
+
+  const handleSubmit = async () => {
+    if (!formValid) return;
+
+    const { error } = await signIn.password({
+      emailAddress,
+      password,
+    });
+
+    if (error) {
+      console.error(JSON.stringify(error, null, 2));
+
+      // posthog.capture("user_sign_in_failed", {
+      //   error_message: error.message,
+      // });
+
+      return;
+    }
+
+    if (signIn.status === "complete") {
+      await signIn.finalize({
+        navigate: ({ session }) => {
+          if (session?.currentTask) {
+            console.log(session.currentTask);
+            return;
+          }
+
+          // posthog.identify(emailAddress, {
+          //   $set: { email: emailAddress },
+          //   $set_once: {
+          //     first_sign_in_date: new Date().toISOString(),
+          //   },
+          // });
+
+          // posthog.capture("user_signed_in", {
+          //   email: emailAddress,
+          // });
+
+          // No manual router.replace() here.
+          // app/(auth)/_layout.tsx will redirect automatically
+          // once isSignedIn becomes true.
+        },
+      });
+    } else if (signIn.status === "needs_second_factor") {
+      console.log("MFA required");
+    } else if (signIn.status === "needs_client_trust") {
+      const emailCodeFactor = signIn.supportedSecondFactors.find(
+        (factor) => factor.strategy === "email_code",
+      );
+
+      if (emailCodeFactor) {
+        await signIn.mfa.sendEmailCode();
+      }
+    } else {
+      console.error("Sign-in attempt not complete:", signIn);
+    }
   };
 
-  return (
-    <SafeAreaView className="flex-1 bg-gray-50">
-      <View className="flex-1 justify-center px-6">
-        {/* Title */}
-        <Text className="text-3xl font-bold text-center text-primary-600 mb-2">
-          Welcome Back
-        </Text>
-        <Text className="text-base text-center text-gray-500 mb-8">
-          Sign in to continue
-        </Text>
+  const handleVerify = async () => {
+    await signIn.mfa.verifyEmailCode({ code });
 
-        {/* Placeholder for sign‑in form */}
-        <View className="space-y-4">
-          <View className="bg-white rounded-xl p-4 shadow-sm">
-            <Text className="text-gray-400 text-sm">Email</Text>
-            <Text className="text-gray-800">user@example.com</Text>
-          </View>
-          <View className="bg-white rounded-xl p-4 shadow-sm">
-            <Text className="text-gray-400 text-sm">Password</Text>
-            <Text className="text-gray-800">••••••••</Text>
-          </View>
-        </View>
+    if (signIn.status === "complete") {
+      await signIn.finalize({
+        navigate: ({ session, decorateUrl }) => {
+          if (session?.currentTask) {
+            console.log(session?.currentTask);
+            return;
+          }
 
-        {/* Sign In button (placeholder) */}
-        <TouchableOpacity className="bg-primary-600 py-4 rounded-xl mt-6">
-          <Text className="text-white text-center font-semibold text-lg">
-            Sign In
-          </Text>
-        </TouchableOpacity>
+          // Track successful sign-in after verification
+          // posthog.identify(emailAddress, {
+          //     $set: { email: emailAddress },
+          //     $set_once: { first_sign_in_date: new Date().toISOString() },
+          // });
+          // posthog.capture('user_signed_in', { email: emailAddress });
 
-        {/* Link to sign-up */}
-        <View className="flex-row justify-center mt-4">
-          <Text className="text-gray-500">Don&apos;t have an account? </Text>
-          <Link
-            href="/(auth)/sign-up"
-            className="text-primary-600 font-semibold"
-          >
-            Create Account
-          </Link>
-        </View>
+          const url = decorateUrl("/(tabs)");
+          if (url.startsWith("http")) {
+            // Only use window.location on web platform
+            if (typeof window !== "undefined" && window.location) {
+              window.location.href = url;
+            } else {
+              // On native, just use router navigation
+              router.replace("/(tabs)" as Href);
+            }
+          } else {
+            router.replace(url as Href);
+          }
+        },
+      });
+    } else {
+      console.error("Sign-in attempt not complete:", signIn);
+    }
+  };
 
-        {/* Separator */}
-        <View className="flex-row items-center my-6">
-          <View className="flex-1 h-px bg-gray-300" />
-          <Text className="mx-4 text-gray-400 text-sm">or</Text>
-          <View className="flex-1 h-px bg-gray-300" />
-        </View>
-
-        {/* Button to go to the main app (root) */}
-        <TouchableOpacity
-          onPress={handleGoToMain}
-          className="border border-primary-600 py-4 rounded-xl"
+  // Show verification screen if client trust is needed
+  if (signIn.status === "needs_client_trust") {
+    return (
+      <SafeAreaView className="auth-safe-area">
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          className="auth-screen"
         >
-          <Text className="text-primary-600 text-center font-semibold text-lg">
-            Skip to Main App
-          </Text>
-        </TouchableOpacity>
-      </View>
+          <ScrollView
+            className="auth-scroll"
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <View className="auth-content">
+              {/* Branding */}
+              <View className="auth-brand-block">
+                <View className="auth-logo-wrap">
+                  <View className="auth-logo-mark">
+                    <Text className="auth-logo-mark-text">R</Text>
+                  </View>
+                  <View>
+                    <Text className="auth-wordmark">Recurrly</Text>
+                    <Text className="auth-wordmark-sub">SUBSCRIPTIONS</Text>
+                  </View>
+                </View>
+                <Text className="auth-title">Verify your identity</Text>
+                <Text className="auth-subtitle">
+                  We sent a verification code to your email
+                </Text>
+              </View>
+
+              {/* Verification Form */}
+              <View className="auth-card">
+                <View className="auth-form">
+                  <View className="auth-field">
+                    <Text className="auth-label">Verification Code</Text>
+                    <TextInput
+                      className="auth-input"
+                      value={code}
+                      placeholder="Enter 6-digit code"
+                      placeholderTextColor="rgba(0, 0, 0, 0.4)"
+                      onChangeText={setCode}
+                      keyboardType="number-pad"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                    />
+                    {errors.fields.code && (
+                      <Text className="auth-error">
+                        {errors.fields.code.message}
+                      </Text>
+                    )}
+                  </View>
+
+                  <Pressable
+                    className={`auth-button ${(!code || fetchStatus === "fetching") && "auth-button-disabled"}`}
+                    onPress={handleVerify}
+                    disabled={!code || fetchStatus === "fetching"}
+                  >
+                    <Text className="auth-button-text">
+                      {fetchStatus === "fetching" ? "Verifying..." : "Verify"}
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    className="auth-secondary-button"
+                    onPress={() => signIn.mfa.sendEmailCode()}
+                    disabled={fetchStatus === "fetching"}
+                  >
+                    <Text className="auth-secondary-button-text">
+                      Resend Code
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    className="auth-secondary-button"
+                    onPress={() => signIn.reset()}
+                    disabled={fetchStatus === "fetching"}
+                  >
+                    <Text className="auth-secondary-button-text">
+                      Start Over
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
+
+  // Main sign-in form
+  return (
+    <SafeAreaView className="auth-safe-area">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        className="auth-screen"
+      >
+        <ScrollView
+          className="auth-scroll"
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View className="auth-content">
+            {/* Branding */}
+            <View className="auth-brand-block">
+              <View className="auth-logo-wrap">
+                <View className="auth-logo-mark">
+                  <Text className="auth-logo-mark-text">R</Text>
+                </View>
+                <View>
+                  <Text className="auth-wordmark">Recurrly</Text>
+                  <Text className="auth-wordmark-sub">SUBSCRIPTIONS</Text>
+                </View>
+              </View>
+              <Text className="auth-title">Welcome back</Text>
+              <Text className="auth-subtitle">
+                Sign in to continue managing your subscriptions
+              </Text>
+            </View>
+
+            {/* Sign-In Form */}
+            <View className="auth-card">
+              <View className="auth-form">
+                <View className="auth-field">
+                  <Text className="auth-label">Email Address</Text>
+                  <TextInput
+                    className={`auth-input ${emailTouched && !emailValid && "auth-input-error"}`}
+                    autoCapitalize="none"
+                    value={emailAddress}
+                    placeholder="name@example.com"
+                    placeholderTextColor="rgba(0, 0, 0, 0.4)"
+                    onChangeText={setEmailAddress}
+                    onBlur={() => setEmailTouched(true)}
+                    keyboardType="email-address"
+                    autoComplete="email"
+                  />
+                  {emailTouched && !emailValid && (
+                    <Text className="auth-error">
+                      Please enter a valid email address
+                    </Text>
+                  )}
+                  {errors.fields.identifier && (
+                    <Text className="auth-error">
+                      {errors.fields.identifier.message}
+                    </Text>
+                  )}
+                </View>
+
+                <View className="auth-field">
+                  <Text className="auth-label">Password</Text>
+                  <TextInput
+                    className={`auth-input ${passwordTouched && !passwordValid && "auth-input-error"}`}
+                    value={password}
+                    placeholder="Enter your password"
+                    placeholderTextColor="rgba(0, 0, 0, 0.4)"
+                    secureTextEntry
+                    onChangeText={setPassword}
+                    onBlur={() => setPasswordTouched(true)}
+                    autoComplete="password"
+                  />
+                  {passwordTouched && !passwordValid && (
+                    <Text className="auth-error">Password is required</Text>
+                  )}
+                  {errors.fields.password && (
+                    <Text className="auth-error">
+                      {errors.fields.password.message}
+                    </Text>
+                  )}
+                </View>
+
+                <Pressable
+                  className={`auth-button ${(!formValid || fetchStatus === "fetching") && "auth-button-disabled"}`}
+                  onPress={handleSubmit}
+                  disabled={!formValid || fetchStatus === "fetching"}
+                >
+                  <Text className="auth-button-text">
+                    {fetchStatus === "fetching" ? "Signing In..." : "Sign In"}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+
+            {/* Sign-Up Link */}
+            <View className="auth-link-row">
+              <Text className="auth-link-copy">
+                Don&apos;t have an account?
+              </Text>
+              <Link href="/(auth)/sign-up" asChild>
+                <Pressable>
+                  <Text className="auth-link">Create Account</Text>
+                </Pressable>
+              </Link>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
