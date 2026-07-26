@@ -12,7 +12,7 @@ const isPostHogConfigured =
 if (!isPostHogConfigured) {
   console.warn(
     "PostHog project token not configured. Analytics will be disabled. " +
-      "Set POSTHOG_PROJECT_TOKEN in your .env file to enable analytics.",
+      "Set EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN in your .env file to enable analytics.",
   );
 }
 
