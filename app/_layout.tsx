@@ -9,9 +9,9 @@ import {
   useGlobalSearchParams,
   usePathname,
 } from "expo-router";
+import { PostHogProvider } from "posthog-react-native";
 import { useEffect, useRef } from "react";
-// import { PostHogProvider } from 'posthog-react-native';
-// import { posthog } from '../src/config/posthog';
+import { posthog } from "../src/config/posthog";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -27,27 +27,27 @@ function RootLayoutContent() {
   const params = useGlobalSearchParams();
   const previousPathname = useRef<string | undefined>(undefined);
 
-  // useEffect(() => {
-  //   if (previousPathname.current !== pathname) {
-  //     // Filter route params to avoid leaking sensitive data
-  //     const sanitizedParams = Object.keys(params).reduce(
-  //       (acc, key) => {
-  //         // Only include specific safe params
-  //         if (["id", "tab", "view"].includes(key)) {
-  //           acc[key] = params[key];
-  //         }
-  //         return acc;
-  //       },
-  //       {} as Record<string, string | string[]>,
-  //     );
+  useEffect(() => {
+    if (previousPathname.current !== pathname) {
+      // Filter route params to avoid leaking sensitive data
+      const sanitizedParams = Object.keys(params).reduce(
+        (acc, key) => {
+          // Only include specific safe params
+          if (["id", "tab", "view"].includes(key)) {
+            acc[key] = params[key];
+          }
+          return acc;
+        },
+        {} as Record<string, string | string[]>,
+      );
 
-  //     posthog.screen(pathname, {
-  //       previous_screen: previousPathname.current ?? null,
-  //       ...sanitizedParams,
-  //     });
-  //     previousPathname.current = pathname;
-  //   }
-  // }, [pathname, params]);
+      posthog.screen(pathname, {
+        previous_screen: previousPathname.current ?? null,
+        ...sanitizedParams,
+      });
+      previousPathname.current = pathname;
+    }
+  }, [pathname, params]);
 
   const [fontsLoaded] = useFonts({
     "sans-regular": require("../assets/fonts/PlusJakartaSans-Regular.ttf"),
@@ -73,18 +73,18 @@ function RootLayoutContent() {
 
 export default function RootLayout() {
   return (
-    // <PostHogProvider
-    //   client={posthog}
-    //   autocapture={{
-    //     captureScreens: false,
-    //     captureTouches: true,
-    //     propsToCapture: ['testID'],
-    //   }}
-    // >
-    <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
-      <RootLayoutContent />
-    </ClerkProvider>
-    // </PostHogProvider>
+    <PostHogProvider
+      client={posthog}
+      autocapture={{
+        captureScreens: false,
+        captureTouches: true,
+        propsToCapture: ["testID"],
+      }}
+    >
+      <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
+        <RootLayoutContent />
+      </ClerkProvider>
+    </PostHogProvider>
   );
 }
 
